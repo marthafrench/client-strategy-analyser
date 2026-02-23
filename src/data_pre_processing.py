@@ -1,3 +1,8 @@
+'''
+How to run:
+From project root, run:
+    python src/data_pre_processing.py
+'''
 import logging
 import re
 import sys
@@ -34,11 +39,11 @@ SHAREHOLDER_GROUP = len(EXPECTED_SHAREHOLDER_COLS) + 1
 
 def get_paths():
     base = Path.cwd()
-    return base / "raw", base / "enriched"
+    return base / "data" / "raw", base / "data" / "enriched"
 
 
 def load_fx_rates(base_dir: Path) -> dict:
-    fx_path = base_dir / "raw" / "fx_rates.csv"
+    fx_path = base_dir / "data" /"raw" / "fx_rates.csv"
     if not fx_path.exists():
         log.error("FX rates file not found: %s", fx_path)
         sys.exit(1)
