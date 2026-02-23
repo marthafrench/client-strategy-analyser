@@ -1,0 +1,5 @@
+from_currency,to_currency,rate,notes
+GBP,ESD,1.432,GBP to ESD
+USD,ESD,0.873,USD to ESD
+AUD,ESD,1.227,AUD to ESD
+ESD,INR,100.3,ESD to INR (informational)
