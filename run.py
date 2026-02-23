@@ -37,7 +37,7 @@ def run_preprocessing(target: str) -> None:
     Call data_pre_processing.py with cwd=data/ so its get_paths() resolves correctly.
     Streams output live and exits if the script fails.
     """
-    data_dir      = config.BASE_DIR / "data"
+    data_dir      = config.BASE_DIR
     preprocess_script = config.BASE_DIR / "src" / "data_pre_processing.py"
 
     cmd = [sys.executable, str(preprocess_script), "--company", target]
