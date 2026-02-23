@@ -55,15 +55,22 @@ def _annotate_bar(ax, bar, fmt="{:.0f}", color=NAVY, offset=4):
         ha="center", color=color, fontsize=8,
     )
 
-# 01_FINANCIAL_PERFORMANCE.CSV
+
+# 01_TSR_WATERFALL.PNG
 def chart_tsr_waterfall(summary: dict, output_dir: Path) -> Path:
     target_company = summary["target_company"]
     target_ticker  = summary["target_ticker"]
 
-    all_df = pd.concat([
-        summary["large_cap_peers"],
-        summary["sector_peers"][summary["sector_peers"]["Company Name"] == target_company],
-    ]).sort_values("tsr_pct")
+    # Combine large-cap peers + target, then deduplicate so target only appears once
+    all_df = (
+        pd.concat([
+            summary["large_cap_peers"],
+            summary["sector_peers"][summary["sector_peers"]["Company Name"] == target_company],
+        ])
+        .drop_duplicates(subset=["Company Name"])
+        .sort_values("tsr_pct")
+        .reset_index(drop=True)
+    )
 
     colours = [
         GREEN if r["Company Name"] == target_company
@@ -86,14 +93,20 @@ def chart_tsr_waterfall(summary: dict, output_dir: Path) -> Path:
     ax.axhline(peer_med, color=NAVY, lw=1.2, linestyle=":", alpha=0.7,
                label=f"Peer Median  {peer_med:.1f}%")
 
-    aurex_idx = list(all_df["Company Name"]).index(target_company)
-    aurex_tsr = all_df.iloc[aurex_idx]["tsr_pct"]
-    ax.annotate(
-        f"{target_ticker}\n{aurex_tsr:.1f}%",
-        xy=(aurex_idx, aurex_tsr), xytext=(aurex_idx + 2.5, aurex_tsr - 25),
-        color=NAVY, fontsize=8, fontweight="bold",
-        arrowprops=dict(arrowstyle="->", color=NAVY, lw=1),
-    )
+    # Safely locate the target row by boolean mask rather than .index()
+    target_mask = all_df["Company Name"] == target_company
+    if target_mask.any():
+        aurex_idx = int(all_df.index[target_mask][0])
+        aurex_tsr = all_df.loc[aurex_idx, "tsr_pct"]
+        # Offset annotation left or right depending on bar position to stay in bounds
+        x_offset = 2.5 if aurex_idx < len(all_df) - 3 else -3.5
+        y_offset = aurex_tsr - 25 if aurex_tsr > all_df["tsr_pct"].min() + 25 else aurex_tsr + 25
+        ax.annotate(
+            f"{target_ticker}\n{aurex_tsr:.1f}%",
+            xy=(aurex_idx, aurex_tsr), xytext=(aurex_idx + x_offset, y_offset),
+            color=NAVY, fontsize=8, fontweight="bold",
+            arrowprops=dict(arrowstyle="->", color=NAVY, lw=1),
+        )
 
     ax.set_xticks(range(len(all_df)))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7.5)
@@ -116,11 +129,20 @@ def chart_valuation_bubble(summary: dict, output_dir: Path) -> Path:
     target_company = summary["target_company"]
     target_ticker  = summary["target_ticker"]
 
-    df = summary["sector_peers"].dropna(subset=["EV/EBITDA", "tsr_pct"]).copy()
-    df["mc_scaled"] = df["Market_cap_million"].clip(lower=1_000) / 2_000
+    all_peers = summary["sector_peers"].copy()
+    all_peers["mc_scaled"] = all_peers["Market_cap_million"].clip(lower=1_000) / 2_000
 
-    peers_df = df[df["Company Name"] != target_company]
-    aurex_df = df[df["Company Name"] == target_company]
+    # Peers: drop rows missing either axis value, exclude target
+    peers_df = (
+        all_peers[all_peers["Company Name"] != target_company]
+        .dropna(subset=["EV/EBITDA", "tsr_pct"])
+    )
+
+    # Target: keep separately so a missing value doesn't silently drop it
+    aurex_df   = all_peers[all_peers["Company Name"] == target_company].copy()
+    target_ev  = aurex_df["EV/EBITDA"].iloc[0] if not aurex_df.empty else None
+    target_tsr = aurex_df["tsr_pct"].iloc[0]   if not aurex_df.empty else None
+    target_mc  = aurex_df["mc_scaled"].iloc[0] if not aurex_df.empty else 200
 
     fig, ax = plt.subplots(figsize=(10, 5.5))
     fig.patch.set_facecolor(CHART_BACKGROUND)
@@ -129,9 +151,23 @@ def chart_valuation_bubble(summary: dict, output_dir: Path) -> Path:
     ax.scatter(peers_df["tsr_pct"], peers_df["EV/EBITDA"],
                s=peers_df["mc_scaled"], c=DARK_BLUE, alpha=0.55,
                edgecolors="none", label="Sector Peers")
-    ax.scatter(aurex_df["tsr_pct"], aurex_df["EV/EBITDA"],
-               s=aurex_df["mc_scaled"], c=LIGHT_BLUE,
-               edgecolors=NAVY, linewidths=1.5, zorder=5, label=target_company)
+
+    # Only plot + annotate target if both axis values are available
+    if pd.notna(target_ev) and pd.notna(target_tsr):
+        ax.scatter([target_tsr], [target_ev], s=[target_mc],
+                   c=LIGHT_BLUE, edgecolors=NAVY, linewidths=1.5, zorder=5, label=target_company)
+        ax.annotate(
+            target_ticker,
+            xy=(target_tsr, target_ev),
+            xytext=(-50, 32), textcoords="offset points",
+            color=DARK_BLUE, fontsize=9, fontweight="bold",
+            arrowprops=dict(arrowstyle="->", color=LIGHT_BLUE, lw=1),
+        )
+    else:
+        import logging
+        logging.getLogger(__name__).warning(
+            "chart_valuation_bubble: target missing EV/EBITDA or TSR — plotted peers only"
+        )
 
     med_tsr = summary["peer_medians"]["tsr_pct"]
     med_ev  = summary["peer_medians"]["ev_ebitda"]
@@ -139,14 +175,6 @@ def chart_valuation_bubble(summary: dict, output_dir: Path) -> Path:
     ax.axvline(med_tsr, color=MID, lw=0.8, linestyle="--", alpha=0.6)
     ax.text(med_tsr + 1, ax.get_ylim()[1] * 0.97,
             f"Peer median TSR\n{med_tsr:.0f}%", color=MID, fontsize=7, va="top")
-
-    ax.annotate(
-        target_ticker,
-        xy=(aurex_df.iloc[0]["tsr_pct"], aurex_df.iloc[0]["EV/EBITDA"]),
-        xytext=(-50, 32), textcoords="offset points",
-        color=DARK_BLUE, fontsize=9, fontweight="bold",
-        arrowprops=dict(arrowstyle="->", color=LIGHT_BLUE, lw=1),
-    )
 
     ax.set_xlabel("3-Year TSR (%)", fontsize=9)
     ax.set_ylabel("EV / EBITDA (x)", fontsize=9)
@@ -159,6 +187,7 @@ def chart_valuation_bubble(summary: dict, output_dir: Path) -> Path:
     _legend(ax, loc="upper right")
     fig.tight_layout()
     return _save(fig, "02_valuation_bubble.png", output_dir)
+
 
 # 03_EBITDA_MARGINS.PNG
 def chart_ebitda_margins(summary: dict, output_dir: Path) -> Path:
@@ -301,8 +330,6 @@ def chart_investor_donut(title: str, style_dict: dict, filename: str, output_dir
               facecolor=CHART_BACKGROUND, edgecolor=MID, labelcolor=NAVY,
               bbox_to_anchor=(0.5, -0.18))
     ax.set_title(title, color=NAVY, fontsize=10, pad=8, fontweight="bold")
-    # ax.text(0, 0, f"{sum(vals):.0f}%\nIdentified",
-    #         ha="center", va="center", color=NAVY, fontsize=9, fontweight="bold")
 
     fig.tight_layout()
     return _save(fig, filename, output_dir)
@@ -326,13 +353,15 @@ def chart_dps_trend(summary: dict, output_dir: Path) -> Path:
                     xytext=(0, 5), textcoords="offset points",
                     ha="center", color=NAVY, fontsize=10, fontweight="bold")
 
-    pct_chg = ((dps[2] - dps[0]) / abs(dps[0])) * 100
-    ax.annotate(
-        f"{pct_chg:+.0f}% vs FY1",
-        xy=(2, dps[2]), xytext=(1.3, max(dps) * 0.6),
-        color=DARK_BLUE, fontsize=10, fontweight="bold",
-        arrowprops=dict(arrowstyle="->", color=DARK_BLUE, lw=1.3),
-    )
+    # Guard against zero or NaN DPS_FY1 before computing pct change
+    if dps[0] and not np.isnan(dps[0]) and abs(dps[0]) > 0:
+        pct_chg = ((dps[2] - dps[0]) / abs(dps[0])) * 100
+        ax.annotate(
+            f"{pct_chg:+.0f}% vs FY1",
+            xy=(2, dps[2]), xytext=(1.3, max(dps) * 0.6),
+            color=DARK_BLUE, fontsize=10, fontweight="bold",
+            arrowprops=dict(arrowstyle="->", color=DARK_BLUE, lw=1.3),
+        )
 
     ax.set_ylabel("Dividend Per Share (ESD)", fontsize=9)
     ax.set_title(f"{target_company} — Dividend Per Share FY1 to FY3", fontsize=10, pad=10)
@@ -384,17 +413,28 @@ def chart_leverage(summary: dict, output_dir: Path) -> Path:
     return _save(fig, "09_leverage.png", output_dir)
 
 
-# 010_VALUATION_COMPS.PNG
+# 10_VALUATION_COMPS.PNG
 def chart_valuation_comps(summary: dict, output_dir: Path) -> Path:
     target_company = summary["target_company"]
     target_ticker  = summary["target_ticker"]
 
-    df = (
-        summary["sector_peers"]
-        .dropna(subset=["EV/EBITDA"])
+    base = summary["sector_peers"].dropna(subset=["EV/EBITDA"])
+
+    # Build top-20 large-cap peers (excluding target to avoid displacing it)
+    peers = (
+        base[base["Company Name"] != target_company]
         .loc[lambda d: d["Market_cap_million"] >= 50_000]
         .sort_values("EV/EBITDA", ascending=False)
         .head(20)
+    )
+
+    # Always append the target, even if it falls below the market cap threshold
+    target_row = base[base["Company Name"] == target_company]
+    df = (
+        pd.concat([peers, target_row])
+        .drop_duplicates(subset=["Company Name"])
+        .sort_values("EV/EBITDA", ascending=False)
+        .reset_index(drop=True)
     )
 
     bar_cols    = [LIGHT_BLUE if n == target_company else DARK_BLUE for n in df["Company Name"]]
@@ -413,7 +453,7 @@ def chart_valuation_comps(summary: dict, output_dir: Path) -> Path:
     ax.set_xticks(range(len(df)))
     ax.set_xticklabels(tick_labels, rotation=45, ha="right", fontsize=7.5)
     ax.set_ylabel("EV / EBITDA (x)", fontsize=9)
-    ax.set_title("EV/EBITDA Comparison — Large-Cap Sector Universe (Top 20)", fontsize=11, pad=10)
+    ax.set_title("EV/EBITDA Comparison — Sector Universe (Top 20 + Target)", fontsize=11, pad=10)
     _spine_style(ax)
     ax.legend(handles=[
         mpatches.Patch(color=LIGHT_BLUE, label=target_company),
@@ -423,22 +463,23 @@ def chart_valuation_comps(summary: dict, output_dir: Path) -> Path:
     fig.tight_layout()
     return _save(fig, "10_valuation_comps.png", output_dir)
 
+
 # main function to create all charts
 def create_charts(summary: dict, output_dir: Path) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     target_company = summary["target_company"]
     print(f"\n[charts] Creating charts for {target_company} in {output_dir}")
     paths = {
-        "tsr_waterfall":chart_tsr_waterfall(summary, output_dir),
+        "tsr_waterfall":   chart_tsr_waterfall(summary, output_dir),
         "valuation_bubble":chart_valuation_bubble(summary, output_dir),
-        "ebitda_margins":chart_ebitda_margins(summary, output_dir),
-        "revenue_bridge":chart_revenue_bridge(summary, output_dir),
+        "ebitda_margins":  chart_ebitda_margins(summary, output_dir),
+        "revenue_bridge":  chart_revenue_bridge(summary, output_dir),
         "investor_compare":chart_investor_style_compare(summary, output_dir),
-        "donut_target":chart_investor_donut(f"{target_company} — Register Composition",summary["target_sh"], "06_donut_target.png", output_dir),
-        "donut_peers":chart_investor_donut("Large-Cap Sector Peer Average",summary["peer_sh_avg"], "07_donut_peers.png", output_dir),
-        "dps_trend":chart_dps_trend(summary, output_dir),
-        "leverage":chart_leverage(summary, output_dir),
-        "valuation_comps":chart_valuation_comps(summary, output_dir),
+        "donut_target":    chart_investor_donut(f"{target_company} — Register Composition", summary["target_sh"], "06_donut_target.png", output_dir),
+        "donut_peers":     chart_investor_donut("Large-Cap Sector Peer Average", summary["peer_sh_avg"], "07_donut_peers.png", output_dir),
+        "dps_trend":       chart_dps_trend(summary, output_dir),
+        "leverage":        chart_leverage(summary, output_dir),
+        "valuation_comps": chart_valuation_comps(summary, output_dir),
     }
 
     print(f"[charts] {len(paths)} charts saved\n")
