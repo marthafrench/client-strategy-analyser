@@ -18,20 +18,9 @@ def calculate_company_metrics(companies, target_company):
         df[f"ebitda_margin_{yr.lower()}"] = (
             df[f"EBITDA_{yr}"] / df[f"Sales_{yr}"].replace(0, np.nan) * 100
         )
-    # percentage change helper function that handles division by zero and returns percentage
-    def pct_chg(a: pd.Series, b: pd.Series) -> pd.Series:
-        return (b - a) / a.abs().replace(0, np.nan) * 100
-    # revenue growth and EBITDA growth between fiscal years, calculated as percentage change
-    df["rev_growth_fy2_fy1"] = pct_chg(df["Sales_FY1"], df["Sales_FY2"])
-    df["rev_growth_fy3_fy2"] = pct_chg(df["Sales_FY2"], df["Sales_FY3"])
-    df["rev_growth_fy3_fy1"] = pct_chg(df["Sales_FY1"], df["Sales_FY3"])
-    df["ebitda_growth_fy2_fy1"] = pct_chg(df["EBITDA_FY1"], df["EBITDA_FY2"])
-    df["ebitda_growth_fy3_fy2"] = pct_chg(df["EBITDA_FY2"], df["EBITDA_FY3"])
     # for each fiscal year, calculate Net Debt / EBITDA as a new column, handling division by zero
     for yr in ("FY1", "FY2", "FY3"):
         df[f"nd_ebitda_{yr.lower()}"] = (df[f"Net_Debt_{yr}"] / df[f"EBITDA_{yr}"].replace(0, np.nan))
-    # calculate various percentage changes and flags for the target company
-    df["dps_change_pct"] = pct_chg(df["DPS_FY1"], df["DPS_FY3"])
     df["tsr_pct"] = df["3yr TSR"] * 100
     df["is_target"] = df["Company Name"] == target_company
     return df
