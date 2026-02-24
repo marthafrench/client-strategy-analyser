@@ -34,7 +34,6 @@ def calculate_company_metrics(companies, target_company):
     df["dps_change_pct"] = pct_chg(df["DPS_FY1"], df["DPS_FY3"])
     df["tsr_pct"] = df["3yr TSR"] * 100
     df["is_target"] = df["Company Name"] == target_company
-    df["is_large_cap"] = df["Market_cap_million"] >= LARGE_CAP_THRESHOLD_M
     return df
 
 
