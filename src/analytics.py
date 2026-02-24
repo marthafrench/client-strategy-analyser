@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-from .config import PEER_SECTOR, LARGE_CAP_THRESHOLD_M, ALL_INVESTOR_STYLES
+from .config import PEER_SECTOR, ALL_INVESTOR_STYLES
 
 def calculate_company_metrics(companies, target_company):
     """Enrich raw company data with calculated metrics like EBITDA margin, revenue growth, and Net Debt / EBITDA."""

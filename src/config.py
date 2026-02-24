@@ -12,7 +12,6 @@ SHAREHOLDER_CSV = ENRICHED_DIR / "shareholder_data_enriched.csv"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ANALYTICS PARAMETERS
-LARGE_CAP_THRESHOLD_M = 100_000 # ESD million
 PEER_SECTOR    = "Health Care"
 CHART_DPI   = 150
 

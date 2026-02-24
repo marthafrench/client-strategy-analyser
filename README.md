@@ -136,7 +136,6 @@ Edit `src/config.py` to customize:
 ### Key Settings
 
 ```python
-LARGE_CAP_THRESHOLD_M = 100_000  # ESD million
 PEER_SECTOR = "Health Care"      # Sector for peer comparison
 CHART_DPI = 150                  # Output chart resolution
 ```
